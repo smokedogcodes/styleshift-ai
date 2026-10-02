@@ -118,9 +118,9 @@ export function ApiKeyModal({
               </h2>
               <p className="mt-1 text-sm text-zinc-400">
                 Bring any key that can edit/generate images. We auto-detect
-                Google Gemini or OpenAI from the key format, then generate only
-                if that provider supports image output. Keys stay in this
-                browser only.
+                Google Gemini, OpenAI, or Hugging Face from the key format, then
+                generate only if that provider supports image output. Keys stay
+                in this browser only.
               </p>
             </div>
           </div>
@@ -137,12 +137,13 @@ export function ApiKeyModal({
         <label className="mb-1.5 block text-sm font-medium text-zinc-300">
           Provider
         </label>
-        <div className="mb-4 grid grid-cols-3 gap-1 rounded-xl border border-white/10 bg-zinc-950/60 p-1">
+        <div className="mb-4 grid grid-cols-2 gap-1 rounded-xl border border-white/10 bg-zinc-950/60 p-1 sm:grid-cols-4">
           {(
             [
               { id: 'auto' as const, label: 'Auto' },
               { id: 'gemini' as const, label: 'Gemini' },
               { id: 'openai' as const, label: 'OpenAI' },
+              { id: 'huggingface' as const, label: 'Hugging Face' },
             ] as const
           ).map((option) => (
             <button
@@ -167,8 +168,14 @@ export function ApiKeyModal({
         {provider === 'auto' && (
           <p className="mb-3 text-xs text-zinc-500">
             {detected
-              ? `Detected: ${detected === 'gemini' ? 'Google Gemini' : 'OpenAI'}`
-              : 'Paste a key starting with AIza… (Gemini) or sk-… (OpenAI).'}
+              ? `Detected: ${
+                  detected === 'gemini'
+                    ? 'Google Gemini'
+                    : detected === 'openai'
+                      ? 'OpenAI'
+                      : 'Hugging Face'
+                }`
+              : 'Paste a key starting with AIza… (Gemini), sk-… (OpenAI), or hf_… (Hugging Face).'}
           </p>
         )}
 
@@ -184,7 +191,11 @@ export function ApiKeyModal({
               setTestResult(null)
             }}
             placeholder={
-              effectiveProvider === 'openai' ? 'sk-...' : 'AIza... or sk-...'
+              effectiveProvider === 'openai'
+                ? 'sk-...'
+                : effectiveProvider === 'huggingface'
+                  ? 'hf_...'
+                  : 'AIza... / sk-... / hf_...'
             }
             className="w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 pr-12 text-sm text-white placeholder:text-zinc-600 focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/40"
             autoComplete="off"
@@ -229,9 +240,20 @@ export function ApiKeyModal({
             Get an OpenAI API key
             <ExternalLink className="h-3.5 w-3.5" />
           </a>
+          <a
+            href="https://huggingface.co/settings/tokens"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-accent hover:underline"
+          >
+            Get a Hugging Face token (hf_)
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
           <p className="text-xs leading-relaxed text-zinc-500">
-            Gemini image models need a billed Google project. OpenAI needs a
-            plan that includes image edits (`gpt-image-1` / DALL·E).
+            Gemini image models need a billed Google project. OpenAI needs image
+            edits access. Hugging Face tokens need{' '}
+            <strong className="font-medium text-zinc-400">Inference Providers</strong>{' '}
+            permission (and usually HF credits).
           </p>
         </div>
 

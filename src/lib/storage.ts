@@ -26,7 +26,12 @@ export function getStoredApiKey(): string | null {
 export function getStoredProvider(): ApiProvider {
   try {
     const value = localStorage.getItem(PROVIDER_KEY)
-    if (value === 'gemini' || value === 'openai' || value === 'auto') {
+    if (
+      value === 'gemini' ||
+      value === 'openai' ||
+      value === 'huggingface' ||
+      value === 'auto'
+    ) {
       return value
     }
   } catch {

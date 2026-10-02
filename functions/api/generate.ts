@@ -42,10 +42,20 @@ function readApiKey(request: Request): string | null {
 
 function readProvider(request: Request, body?: GenerateBody): ApiProvider {
   const header = request.headers.get('x-api-provider')?.trim().toLowerCase()
-  if (header === 'gemini' || header === 'openai' || header === 'auto') {
+  if (
+    header === 'gemini' ||
+    header === 'openai' ||
+    header === 'huggingface' ||
+    header === 'auto'
+  ) {
     return header
   }
-  if (body?.provider === 'gemini' || body?.provider === 'openai' || body?.provider === 'auto') {
+  if (
+    body?.provider === 'gemini' ||
+    body?.provider === 'openai' ||
+    body?.provider === 'huggingface' ||
+    body?.provider === 'auto'
+  ) {
     return body.provider
   }
   return 'auto'
@@ -81,7 +91,7 @@ export const onRequestPost: PagesFunction = async (context) => {
       {
         success: false,
         error:
-          'Could not detect the API provider from this key. Choose Google Gemini or OpenAI in the key modal, or use a key starting with AIza (Gemini) or sk- (OpenAI).',
+          'Could not detect the API provider from this key. Choose Gemini, OpenAI, or Hugging Face in the key modal, or use a key starting with AIza (Gemini), sk- (OpenAI), or hf_ (Hugging Face).',
       },
       400,
     )

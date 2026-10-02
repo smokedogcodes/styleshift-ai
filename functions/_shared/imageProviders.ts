@@ -1,12 +1,19 @@
-export type ApiProvider = 'auto' | 'gemini' | 'openai'
-export type ResolvedProvider = 'gemini' | 'openai'
+export type ApiProvider = 'auto' | 'gemini' | 'openai' | 'huggingface'
+
+export type ResolvedProvider = 'gemini' | 'openai' | 'huggingface'
 
 export function detectProviderFromKey(apiKey: string): ResolvedProvider | null {
   const key = apiKey.trim()
   if (!key) return null
-  if (key.startsWith('AIza') || /^AI[a-zA-Z0-9_-]{10,}/.test(key)) {
+
+  if (key.startsWith('hf_')) {
+    return 'huggingface'
+  }
+
+  if (key.startsWith('AIza') || /^AI[a-zA-Z0-9_-]{20,}/.test(key)) {
     return 'gemini'
   }
+
   if (
     key.startsWith('sk-') ||
     key.startsWith('sk-proj-') ||
@@ -14,6 +21,7 @@ export function detectProviderFromKey(apiKey: string): ResolvedProvider | null {
   ) {
     return 'openai'
   }
+
   return null
 }
 
@@ -21,7 +29,13 @@ export function resolveProvider(
   apiKey: string,
   preferred: ApiProvider = 'auto',
 ): ResolvedProvider | null {
-  if (preferred === 'gemini' || preferred === 'openai') return preferred
+  if (
+    preferred === 'gemini' ||
+    preferred === 'openai' ||
+    preferred === 'huggingface'
+  ) {
+    return preferred
+  }
   return detectProviderFromKey(apiKey)
 }
 
@@ -81,6 +95,13 @@ const GEMINI_MODELS = [
 
 const OPENAI_EDIT_MODELS = ['gpt-image-1', 'dall-e-2'] as const
 
+/** Hugging Face image-to-image / edit models via Inference Providers */
+const HF_IMAGE_MODELS = [
+  'black-forest-labs/FLUX.1-Kontext-dev',
+  'Qwen/Qwen-Image-Edit',
+  'black-forest-labs/FLUX.1-Kontext-pro',
+] as const
+
 function isBillingRequiredError(status: number, message?: string): boolean {
   const lower = (message || '').toLowerCase()
   return (
@@ -98,7 +119,7 @@ function mapGeminiMessage(status: number, message?: string): string {
   if (isBillingRequiredError(status, message)) {
     return (
       'Google Gemini image models require a billed project (free-tier image quota is 0). ' +
-      'Enable billing in AI Studio, or use an OpenAI key that supports image edits instead.'
+      'Enable billing in AI Studio, or use an OpenAI / Hugging Face key instead.'
     )
   }
   if (
@@ -136,6 +157,33 @@ function mapOpenAIMessage(status: number, message?: string): string {
   return message || 'OpenAI image generation failed.'
 }
 
+function mapHuggingFaceMessage(status: number, message?: string): string {
+  const lower = (message || '').toLowerCase()
+  if (
+    status === 401 ||
+    status === 403 ||
+    lower.includes('invalid') ||
+    lower.includes('unauthorized') ||
+    lower.includes('authentication')
+  ) {
+    return 'Invalid Hugging Face token. Create a token with Inference Providers permission.'
+  }
+  if (
+    lower.includes('inference providers') ||
+    lower.includes('make sure to have inference') ||
+    lower.includes('permissions')
+  ) {
+    return 'This Hugging Face token needs “Inference Providers” permission (and often HF credits / Pro).'
+  }
+  if (status === 429 || lower.includes('rate') || lower.includes('quota')) {
+    return 'Hugging Face rate limit or quota exceeded. Wait, or check your HF billing/credits.'
+  }
+  if (status === 503 || lower.includes('loading') || lower.includes('currently loading')) {
+    return 'Hugging Face model is loading. Wait ~20s and try again.'
+  }
+  return message || 'Hugging Face image generation failed.'
+}
+
 interface GeminiPart {
   inlineData?: { mimeType?: string; data?: string }
   inline_data?: { mime_type?: string; data?: string }
@@ -156,6 +204,24 @@ function extractGeminiImage(parts: GeminiPart[] | undefined) {
     }
   }
   return null
+}
+
+function arrayBufferToBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf)
+  let binary = ''
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  return btoa(binary)
+}
+
+function base64ToUint8Array(base64: string): Uint8Array {
+  const binary = atob(base64)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return bytes
 }
 
 export async function generateWithGemini(
@@ -223,24 +289,11 @@ export async function generateWithGemini(
     lastStatus = res.status
     lastError = mapGeminiMessage(res.status, data.error?.message)
 
-    if (isBillingRequiredError(res.status, data.error?.message)) {
-      break
-    }
-    if (res.status === 401 || res.status === 403) {
-      break
-    }
+    if (isBillingRequiredError(res.status, data.error?.message)) break
+    if (res.status === 401 || res.status === 403) break
   }
 
   return { success: false, status: lastStatus, error: lastError, provider: 'gemini' }
-}
-
-function base64ToUint8Array(base64: string): Uint8Array {
-  const binary = atob(base64)
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i)
-  }
-  return bytes
 }
 
 export async function generateWithOpenAI(
@@ -265,7 +318,6 @@ export async function generateWithOpenAI(
     form.append('prompt', args.prompt)
     form.append('model', model)
     form.append('n', '1')
-    // dall-e-2 supports response_format; gpt-image-1 returns b64 by default in many accounts
     if (model === 'dall-e-2') {
       form.append('response_format', 'b64_json')
       form.append('size', '1024x1024')
@@ -297,15 +349,9 @@ export async function generateWithOpenAI(
       if (data.data[0].url) {
         const imgRes = await fetch(data.data[0].url)
         if (imgRes.ok) {
-          const buf = await imgRes.arrayBuffer()
-          const bytesOut = new Uint8Array(buf)
-          let binary = ''
-          for (let i = 0; i < bytesOut.length; i++) {
-            binary += String.fromCharCode(bytesOut[i])
-          }
           return {
             success: true,
-            image: btoa(binary),
+            image: arrayBufferToBase64(await imgRes.arrayBuffer()),
             mimeType: imgRes.headers.get('content-type') || 'image/png',
             provider: 'openai',
             model,
@@ -320,7 +366,6 @@ export async function generateWithOpenAI(
     lastStatus = res.status
     lastError = mapOpenAIMessage(res.status, data.error?.message)
 
-    // Model not available — try next
     const msg = (data.error?.message || '').toLowerCase()
     if (
       res.status === 404 ||
@@ -330,21 +375,156 @@ export async function generateWithOpenAI(
     ) {
       continue
     }
-    if (res.status === 401 || res.status === 403) {
-      break
-    }
+    if (res.status === 401 || res.status === 403) break
   }
 
   return { success: false, status: lastStatus, error: lastError, provider: 'openai' }
+}
+
+async function parseHfImageResponse(
+  res: Response,
+): Promise<{ data: string; mimeType: string } | null> {
+  const contentType = res.headers.get('content-type') || ''
+
+  if (contentType.includes('application/json')) {
+    const data = (await res.json().catch(() => null)) as
+      | {
+          error?: string | { message?: string }
+          image?: string
+          images?: string[]
+        }
+      | null
+    if (!data) return null
+    const maybe =
+      data.image ||
+      (Array.isArray(data.images) ? data.images[0] : undefined)
+    if (typeof maybe === 'string') {
+      const cleaned = maybe.includes(',')
+        ? maybe.slice(maybe.indexOf(',') + 1)
+        : maybe
+      return { data: cleaned, mimeType: 'image/png' }
+    }
+    return null
+  }
+
+  if (
+    contentType.startsWith('image/') ||
+    contentType.includes('octet-stream') ||
+    contentType === ''
+  ) {
+    const buf = await res.arrayBuffer()
+    if (!buf.byteLength) return null
+    return {
+      data: arrayBufferToBase64(buf),
+      mimeType: contentType.startsWith('image/') ? contentType : 'image/png',
+    }
+  }
+
+  return null
+}
+
+export async function generateWithHuggingFace(
+  args: GenerateArgs,
+): Promise<ProviderResult | ProviderFailure> {
+  let lastError = 'Hugging Face image generation failed.'
+  let lastStatus = 502
+
+  const dataUrl = `data:${args.mimeType};base64,${args.imageBase64}`
+  const endpointsFor = (model: string) => [
+    `https://router.huggingface.co/hf-inference/models/${model}`,
+    `https://api-inference.huggingface.co/models/${model}`,
+  ]
+
+  for (const model of HF_IMAGE_MODELS) {
+    for (const url of endpointsFor(model)) {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${args.apiKey}`,
+          'Content-Type': 'application/json',
+          Accept: 'image/png, application/json',
+        },
+        body: JSON.stringify({
+          inputs: dataUrl,
+          parameters: {
+            prompt: args.prompt,
+            guidance_scale: 7.5,
+            num_inference_steps: 28,
+          },
+        }),
+      })
+
+      if (res.ok) {
+        const image = await parseHfImageResponse(res)
+        if (image) {
+          return {
+            success: true,
+            image: image.data,
+            mimeType: image.mimeType,
+            provider: 'huggingface',
+            model,
+          }
+        }
+        lastStatus = 502
+        lastError = 'Hugging Face returned an empty image response.'
+        continue
+      }
+
+      const errJson = (await res
+        .clone()
+        .json()
+        .catch(() => ({}))) as {
+        error?: string | { message?: string }
+        estimated_time?: number
+      }
+      const rawMessage =
+        typeof errJson.error === 'string'
+          ? errJson.error
+          : errJson.error?.message || (await res.text().catch(() => ''))
+
+      lastStatus = res.status
+      lastError = mapHuggingFaceMessage(res.status, rawMessage)
+
+      // Model loading — tell user to retry
+      if (res.status === 503) {
+        return {
+          success: false,
+          status: 503,
+          error: lastError,
+          provider: 'huggingface',
+        }
+      }
+
+      if (res.status === 401 || res.status === 403) {
+        return {
+          success: false,
+          status: res.status,
+          error: lastError,
+          provider: 'huggingface',
+        }
+      }
+
+      // Try next endpoint/model on 404/not supported
+      if (res.status === 404 || res.status === 400) {
+        continue
+      }
+    }
+  }
+
+  return {
+    success: false,
+    status: lastStatus,
+    error: lastError,
+    provider: 'huggingface',
+  }
 }
 
 export async function generateWithProvider(
   provider: ResolvedProvider,
   args: GenerateArgs,
 ): Promise<ProviderResult | ProviderFailure> {
-  if (provider === 'openai') {
-    return generateWithOpenAI(args)
-  }
+  if (provider === 'openai') return generateWithOpenAI(args)
+  if (provider === 'huggingface') return generateWithHuggingFace(args)
   return generateWithGemini(args)
 }
 
@@ -360,9 +540,7 @@ export async function testGeminiKey(apiKey: string): Promise<{
       headers: { 'x-goog-api-key': apiKey },
     },
   )
-  if (res.ok) {
-    return { valid: true, provider: 'gemini' }
-  }
+  if (res.ok) return { valid: true, provider: 'gemini' }
   if (res.status === 401 || res.status === 403) {
     return { valid: false, error: 'Invalid Google Gemini API key.', provider: 'gemini' }
   }
@@ -418,5 +596,45 @@ export async function testOpenAIKey(apiKey: string): Promise<{
     error: imageCapable
       ? undefined
       : 'Key is valid, but no image models were listed. Image edits may still work depending on your plan.',
+  }
+}
+
+export async function testHuggingFaceKey(apiKey: string): Promise<{
+  valid: boolean
+  error?: string
+  provider: 'huggingface'
+  message?: string
+}> {
+  const res = await fetch('https://huggingface.co/api/whoami-v2', {
+    method: 'GET',
+    headers: { Authorization: `Bearer ${apiKey}` },
+  })
+
+  if (res.ok) {
+    const data = (await res.json().catch(() => ({}))) as {
+      name?: string
+      type?: string
+    }
+    return {
+      valid: true,
+      provider: 'huggingface',
+      message: data.name
+        ? `Hugging Face token is valid (${data.name}). Needs Inference Providers permission for image edits.`
+        : 'Hugging Face token is valid. Needs Inference Providers permission for image edits.',
+    }
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    return {
+      valid: false,
+      error: 'Invalid Hugging Face token.',
+      provider: 'huggingface',
+    }
+  }
+
+  return {
+    valid: false,
+    error: 'Could not validate Hugging Face token.',
+    provider: 'huggingface',
   }
 }

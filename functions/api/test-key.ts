@@ -2,6 +2,7 @@ import {
   detectProviderFromKey,
   resolveProvider,
   testGeminiKey,
+  testHuggingFaceKey,
   testOpenAIKey,
   type ApiProvider,
 } from '../_shared/imageProviders'
@@ -31,6 +32,15 @@ function readApiKey(request: Request): string | null {
   )
 }
 
+function isProvider(value: string | null | undefined): value is ApiProvider {
+  return (
+    value === 'auto' ||
+    value === 'gemini' ||
+    value === 'openai' ||
+    value === 'huggingface'
+  )
+}
+
 export const onRequestOptions: PagesFunction = async () =>
   new Response(null, { status: 204, headers: corsHeaders })
 
@@ -42,18 +52,12 @@ export const onRequestPost: PagesFunction = async (context) => {
 
   let preferred: ApiProvider = 'auto'
   const header = context.request.headers.get('x-api-provider')?.trim().toLowerCase()
-  if (header === 'gemini' || header === 'openai' || header === 'auto') {
+  if (isProvider(header)) {
     preferred = header
   } else {
     try {
       const body = (await context.request.json()) as { provider?: ApiProvider }
-      if (
-        body.provider === 'gemini' ||
-        body.provider === 'openai' ||
-        body.provider === 'auto'
-      ) {
-        preferred = body.provider
-      }
+      if (isProvider(body.provider)) preferred = body.provider
     } catch {
       // no body is fine
     }
@@ -63,10 +67,10 @@ export const onRequestPost: PagesFunction = async (context) => {
 
   try {
     if (!provider) {
-      // Ambiguous key — probe both
-      const [gemini, openai] = await Promise.all([
+      const [gemini, openai, huggingface] = await Promise.all([
         testGeminiKey(apiKey),
         testOpenAIKey(apiKey),
+        testHuggingFaceKey(apiKey),
       ])
       if (gemini.valid) {
         return jsonResponse({
@@ -86,11 +90,18 @@ export const onRequestPost: PagesFunction = async (context) => {
             : openai.error || 'Key works with OpenAI.',
         })
       }
+      if (huggingface.valid) {
+        return jsonResponse({
+          valid: true,
+          provider: 'huggingface',
+          message: huggingface.message,
+        })
+      }
       return jsonResponse(
         {
           valid: false,
           error:
-            'Could not validate this key with Gemini or OpenAI. Choose a provider manually, or use an AIza… / sk-… key.',
+            'Could not validate this key with Gemini, OpenAI, or Hugging Face. Choose a provider manually, or use an AIza… / sk-… / hf_… key.',
         },
         401,
       )
@@ -109,6 +120,19 @@ export const onRequestPost: PagesFunction = async (context) => {
               ? 'OpenAI key is valid and lists image models.'
               : result.error || 'OpenAI key is valid.'
             : undefined,
+        },
+        result.valid ? 200 : 401,
+      )
+    }
+
+    if (provider === 'huggingface') {
+      const result = await testHuggingFaceKey(apiKey)
+      return jsonResponse(
+        {
+          valid: result.valid,
+          provider: 'huggingface',
+          error: result.valid ? undefined : result.error,
+          message: result.valid ? result.message : undefined,
         },
         result.valid ? 200 : 401,
       )

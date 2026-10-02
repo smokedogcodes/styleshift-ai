@@ -10,12 +10,12 @@ Built with **Vite + React + TypeScript + Tailwind CSS + Lucide**, deployed on **
 - Hairstyle & hair color presets + optional custom prompt
 - Zero Facial Drift prompting — only hair/hairline change
 - Before/after comparison slider + HD download
-- BYOK image API keys: **Auto-detect Google Gemini or OpenAI** (keys stored in `sessionStorage` / optional `localStorage`)
+- BYOK image API keys: **Auto-detect Google Gemini, OpenAI, or Hugging Face** (keys stored in `sessionStorage` / optional `localStorage`)
 
 ## Prerequisites
 
 - Node.js 18+
-- A BYOK image API key ([Google AI Studio](https://aistudio.google.com/api-keys) and/or [OpenAI](https://platform.openai.com/api-keys))
+- A BYOK image API key ([Google AI Studio](https://aistudio.google.com/api-keys), [OpenAI](https://platform.openai.com/api-keys), and/or [Hugging Face](https://huggingface.co/settings/tokens))
 - (Deploy) GitHub account + Cloudflare account
 
 ## Local development
@@ -103,10 +103,13 @@ StyleShift routes your BYOK key to a provider that can return images:
 |----------|-----------|--------------|
 | Google Gemini | `AIza…` | `gemini-3.1-flash-lite-image`, `gemini-3.1-flash-image`, `gemini-2.5-flash-image` |
 | OpenAI | `sk-…` | `gpt-image-1` image edits, then `dall-e-2` edits |
+| Hugging Face | `hf_…` | `FLUX.1-Kontext-dev`, `Qwen-Image-Edit` via Inference API |
 
-Choose **Auto**, **Gemini**, or **OpenAI** in the key modal. Generation only proceeds through a provider that supports image output.
+Choose **Auto**, **Gemini**, **OpenAI**, or **Hugging Face** in the key modal. Generation only proceeds through a provider that supports image output.
 
-**Gemini note:** image models are paid-only on the API (free-tier quota is 0). Enable billing in AI Studio or use an OpenAI key with image access instead.
+**Notes:**
+- Gemini image models are paid-only on the API (free-tier quota is 0).
+- Hugging Face tokens need **Inference Providers** permission (create at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)).
 
 Face identity is reinforced via a strict system-style prompt in `functions/_shared/imageProviders.ts`.
 
