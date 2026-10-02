@@ -95,21 +95,21 @@ const GEMINI_MODELS = [
 
 const OPENAI_EDIT_MODELS = ['gpt-image-1', 'dall-e-2'] as const
 
-/** Hugging Face image-to-image via router.huggingface.co only.
- *  Do NOT use api-inference.huggingface.co — hostname is dead (causes CF error 1016).
+/** Hugging Face image edits via fal-ai on the HF router (NOT hf-inference).
+ *  Kontext / Qwen Image Edit are live on fal-ai only.
  */
-const HF_IMAGE_ATTEMPTS = [
+const HF_FAL_ATTEMPTS = [
   {
-    model: 'black-forest-labs/FLUX.1-Kontext-dev',
-    url: 'https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-Kontext-dev',
+    label: 'black-forest-labs/FLUX.1-Kontext-dev',
+    providerId: 'fal-ai/flux-kontext/dev',
   },
   {
-    model: 'Qwen/Qwen-Image-Edit',
-    url: 'https://router.huggingface.co/hf-inference/models/Qwen/Qwen-Image-Edit',
+    label: 'Qwen/Qwen-Image-Edit',
+    providerId: 'fal-ai/qwen-image-edit',
   },
   {
-    model: 'black-forest-labs/FLUX.1-Kontext-pro',
-    url: 'https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-Kontext-pro',
+    label: 'black-forest-labs/FLUX.2-klein-9B',
+    providerId: 'fal-ai/flux-2/klein/9b/edit',
   },
 ] as const
 
@@ -215,6 +215,12 @@ function mapHuggingFaceMessage(status: number, message?: string): string {
   }
   if (status === 429 || lower.includes('rate') || lower.includes('quota')) {
     return 'Hugging Face rate limit or quota exceeded. Wait, or check your HF billing/credits.'
+  }
+  if (
+    lower.includes('not supported by provider') ||
+    lower.includes('model not supported')
+  ) {
+    return 'This Hugging Face model isn’t available on that backend. Retrying with fal-ai image-edit providers…'
   }
   if (status === 503 || lower.includes('loading') || lower.includes('currently loading')) {
     return 'Hugging Face model is loading. Wait ~20s and try again.'
@@ -469,82 +475,153 @@ export async function generateWithHuggingFace(
   let lastStatus = 502
 
   const dataUrl = `data:${args.mimeType};base64,${args.imageBase64}`
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${args.apiKey}`,
+    'Content-Type': 'application/json',
+  }
 
-  for (const attempt of HF_IMAGE_ATTEMPTS) {
-    let res: Response
+  for (const attempt of HF_FAL_ATTEMPTS) {
+    const url = `https://router.huggingface.co/fal-ai/${attempt.providerId}?_subdomain=queue`
+
     try {
-      res = await fetch(attempt.url, {
+      const submitRes = await fetch(url, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${args.apiKey}`,
-          'Content-Type': 'application/json',
-          Accept: 'image/png, application/json',
-        },
+        headers,
         body: JSON.stringify({
-          inputs: dataUrl,
-          parameters: {
-            prompt: args.prompt,
-            guidance_scale: 7.5,
-            num_inference_steps: 28,
-          },
+          prompt: args.prompt,
+          image_url: dataUrl,
+          image_urls: [dataUrl],
         }),
       })
+
+      if (!submitRes.ok) {
+        const errJson = (await submitRes
+          .clone()
+          .json()
+          .catch(() => ({}))) as {
+          error?: string | { message?: string }
+          detail?: string
+        }
+        const rawMessage =
+          typeof errJson.error === 'string'
+            ? errJson.error
+            : errJson.error?.message ||
+              errJson.detail ||
+              (await submitRes.text().catch(() => ''))
+
+        lastStatus = submitRes.status
+        lastError = mapHuggingFaceMessage(submitRes.status, rawMessage)
+
+        if (submitRes.status === 401 || submitRes.status === 403) {
+          return {
+            success: false,
+            status: submitRes.status,
+            error: lastError,
+            provider: 'huggingface',
+          }
+        }
+        continue
+      }
+
+      const submitJson = (await submitRes.json()) as {
+        request_id?: string
+        status?: string
+        response_url?: string
+        status_url?: string
+        images?: Array<{ url?: string }>
+      }
+
+      if (submitJson.images?.[0]?.url) {
+        const imgRes = await fetch(submitJson.images[0].url)
+        if (imgRes.ok) {
+          return {
+            success: true,
+            image: arrayBufferToBase64(await imgRes.arrayBuffer()),
+            mimeType: imgRes.headers.get('content-type') || 'image/png',
+            provider: 'huggingface',
+            model: attempt.label,
+          }
+        }
+      }
+
+      if (!submitJson.request_id || !submitJson.response_url) {
+        lastStatus = 502
+        lastError = 'Hugging Face/fal queue returned an unexpected response.'
+        continue
+      }
+
+      const parsedSubmit = new URL(url)
+      const routerBase = `${parsedSubmit.protocol}//${parsedSubmit.host}/fal-ai`
+      const responsePath = new URL(submitJson.response_url).pathname
+      const statusUrl =
+        submitJson.status_url ||
+        `${routerBase}${responsePath}/status${parsedSubmit.search}`
+      const resultUrl = `${routerBase}${responsePath}${parsedSubmit.search}`
+
+      let status = submitJson.status || 'IN_QUEUE'
+      const started = Date.now()
+      while (status !== 'COMPLETED') {
+        if (Date.now() - started > 120_000) {
+          throw new Error('Hugging Face image edit timed out while waiting in queue.')
+        }
+        await new Promise((r) => setTimeout(r, 800))
+        const statusRes = await fetch(statusUrl, { headers })
+        if (!statusRes.ok) {
+          const text = await statusRes.text().catch(() => '')
+          throw new Error(
+            sanitizeProviderError(statusRes.status, text) ||
+              `Queue status failed (${statusRes.status})`,
+          )
+        }
+        const statusJson = (await statusRes.json()) as { status?: string }
+        status = statusJson.status || status
+        if (status === 'FAILED') {
+          throw new Error('Hugging Face/fal image edit failed in queue.')
+        }
+      }
+
+      const resultRes = await fetch(resultUrl, { headers })
+      if (!resultRes.ok) {
+        const text = await resultRes.text().catch(() => '')
+        lastStatus = resultRes.status
+        lastError =
+          sanitizeProviderError(resultRes.status, text) ||
+          `Queue result failed (${resultRes.status})`
+        continue
+      }
+
+      const result = (await resultRes.json()) as {
+        images?: Array<{ url?: string }>
+        error?: string
+      }
+
+      if (result?.images?.[0]?.url) {
+        const imgRes = await fetch(result.images[0].url)
+        if (!imgRes.ok) {
+          lastStatus = imgRes.status
+          lastError = 'Hugging Face returned an image URL that could not be downloaded.'
+          continue
+        }
+        return {
+          success: true,
+          image: arrayBufferToBase64(await imgRes.arrayBuffer()),
+          mimeType: imgRes.headers.get('content-type') || 'image/png',
+          provider: 'huggingface',
+          model: attempt.label,
+        }
+      }
+
+      lastStatus = 502
+      lastError = mapHuggingFaceMessage(
+        502,
+        result?.error || 'Hugging Face returned no image URL.',
+      )
     } catch (err) {
       lastStatus = 502
-      lastError = sanitizeProviderError(
+      lastError = mapHuggingFaceMessage(
         502,
         err instanceof Error ? err.message : 'Network error contacting Hugging Face',
       )
-      continue
-    }
-
-    if (res.ok) {
-      const image = await parseHfImageResponse(res)
-      if (image) {
-        return {
-          success: true,
-          image: image.data,
-          mimeType: image.mimeType,
-          provider: 'huggingface',
-          model: attempt.model,
-        }
-      }
-      lastStatus = 502
-      lastError = 'Hugging Face returned an empty image response.'
-      continue
-    }
-
-    const errJson = (await res
-      .clone()
-      .json()
-      .catch(() => ({}))) as {
-      error?: string | { message?: string }
-      estimated_time?: number
-    }
-    const rawMessage =
-      typeof errJson.error === 'string'
-        ? errJson.error
-        : errJson.error?.message || (await res.text().catch(() => ''))
-
-    lastStatus = res.status
-    lastError = mapHuggingFaceMessage(res.status, rawMessage)
-
-    if (res.status === 503) {
-      return {
-        success: false,
-        status: 503,
-        error: lastError,
-        provider: 'huggingface',
-      }
-    }
-
-    if (res.status === 401 || res.status === 403) {
-      return {
-        success: false,
-        status: res.status,
-        error: lastError,
-        provider: 'huggingface',
-      }
     }
   }
 

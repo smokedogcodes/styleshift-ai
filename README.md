@@ -103,7 +103,7 @@ StyleShift routes your BYOK key to a provider that can return images:
 |----------|-----------|--------------|
 | Google Gemini | `AIza…` | `gemini-3.1-flash-lite-image`, `gemini-3.1-flash-image`, `gemini-2.5-flash-image` |
 | OpenAI | `sk-…` | `gpt-image-1` image edits, then `dall-e-2` edits |
-| Hugging Face | `hf_…` | `FLUX.1-Kontext-dev`, `Qwen-Image-Edit` via Inference API |
+| Hugging Face | `hf_…` | fal-ai queue via HF router: FLUX.1-Kontext-dev, Qwen-Image-Edit, FLUX.2-klein edit |
 
 Choose **Auto**, **Gemini**, **OpenAI**, or **Hugging Face** in the key modal. Generation only proceeds through a provider that supports image output.
 
