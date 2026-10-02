@@ -23,7 +23,7 @@ export const MALE_HAIRSTYLES: HairstylePreset[] = [
     tag: 'Short',
     description: 'Clean close-cropped cut',
     gender: 'male',
-    image: '/hairstyles/male/buzz-cut.svg',
+    image: '/hairstyles/male/buzz-cut.jpg',
   },
   {
     id: 'textured-crop',
@@ -31,7 +31,7 @@ export const MALE_HAIRSTYLES: HairstylePreset[] = [
     tag: 'Modern',
     description: 'Messy textured top with faded sides',
     gender: 'male',
-    image: '/hairstyles/male/textured-crop.svg',
+    image: '/hairstyles/male/textured-crop.jpg',
   },
   {
     id: 'classic-pompadour',
@@ -39,7 +39,7 @@ export const MALE_HAIRSTYLES: HairstylePreset[] = [
     tag: 'Classic',
     description: 'Voluminous swept-back crown',
     gender: 'male',
-    image: '/hairstyles/male/classic-pompadour.svg',
+    image: '/hairstyles/male/classic-pompadour.jpg',
   },
   {
     id: 'slick-back',
@@ -47,7 +47,7 @@ export const MALE_HAIRSTYLES: HairstylePreset[] = [
     tag: 'Clean',
     description: 'Polished hair combed straight back',
     gender: 'male',
-    image: '/hairstyles/male/slick-back.svg',
+    image: '/hairstyles/male/slick-back.jpg',
   },
   {
     id: 'curtain-bangs-men',
@@ -55,7 +55,7 @@ export const MALE_HAIRSTYLES: HairstylePreset[] = [
     tag: 'Soft',
     description: 'Center-parted face-framing fringe',
     gender: 'male',
-    image: '/hairstyles/male/curtain-bangs-men.svg',
+    image: '/hairstyles/male/curtain-bangs-men.jpg',
   },
   {
     id: 'man-bun',
@@ -63,7 +63,7 @@ export const MALE_HAIRSTYLES: HairstylePreset[] = [
     tag: 'Tied',
     description: 'Top knot with clean sides',
     gender: 'male',
-    image: '/hairstyles/male/man-bun.svg',
+    image: '/hairstyles/male/man-bun.jpg',
   },
   {
     id: 'afro-fade',
@@ -71,7 +71,7 @@ export const MALE_HAIRSTYLES: HairstylePreset[] = [
     tag: 'Texture',
     description: 'Natural afro volume with faded sides',
     gender: 'male',
-    image: '/hairstyles/male/afro-fade.svg',
+    image: '/hairstyles/male/afro-fade.jpg',
   },
   {
     id: 'quiff',
@@ -79,7 +79,7 @@ export const MALE_HAIRSTYLES: HairstylePreset[] = [
     tag: 'Volume',
     description: 'Lifted front with tapered sides',
     gender: 'male',
-    image: '/hairstyles/male/quiff.svg',
+    image: '/hairstyles/male/quiff.jpg',
   },
 ]
 
@@ -90,7 +90,7 @@ export const FEMALE_HAIRSTYLES: HairstylePreset[] = [
     tag: 'Short',
     description: 'Short cropped pixie with soft edges',
     gender: 'female',
-    image: '/hairstyles/female/pixie-cut.svg',
+    image: '/hairstyles/female/pixie-cut.jpg',
   },
   {
     id: 'wavy-bob',
@@ -98,7 +98,7 @@ export const FEMALE_HAIRSTYLES: HairstylePreset[] = [
     tag: 'Medium',
     description: 'Chin-length soft waves',
     gender: 'female',
-    image: '/hairstyles/female/wavy-bob.svg',
+    image: '/hairstyles/female/wavy-bob.jpg',
   },
   {
     id: 'curtain-bangs',
@@ -106,7 +106,7 @@ export const FEMALE_HAIRSTYLES: HairstylePreset[] = [
     tag: 'Soft',
     description: 'Center-parted face-framing bangs',
     gender: 'female',
-    image: '/hairstyles/female/curtain-bangs.svg',
+    image: '/hairstyles/female/curtain-bangs.jpg',
   },
   {
     id: 'shoulder-layers',
@@ -114,7 +114,7 @@ export const FEMALE_HAIRSTYLES: HairstylePreset[] = [
     tag: 'Long',
     description: 'Layered shoulder-length hair',
     gender: 'female',
-    image: '/hairstyles/female/shoulder-layers.svg',
+    image: '/hairstyles/female/shoulder-layers.jpg',
   },
   {
     id: 'long-straight',
@@ -122,7 +122,7 @@ export const FEMALE_HAIRSTYLES: HairstylePreset[] = [
     tag: 'Long',
     description: 'Sleek straight hair past the shoulders',
     gender: 'female',
-    image: '/hairstyles/female/long-straight.svg',
+    image: '/hairstyles/female/long-straight.jpg',
   },
   {
     id: 'beach-waves',
@@ -130,7 +130,7 @@ export const FEMALE_HAIRSTYLES: HairstylePreset[] = [
     tag: 'Wavy',
     description: 'Loose tousled beach waves',
     gender: 'female',
-    image: '/hairstyles/female/beach-waves.svg',
+    image: '/hairstyles/female/beach-waves.jpg',
   },
   {
     id: 'high-ponytail',
@@ -138,7 +138,7 @@ export const FEMALE_HAIRSTYLES: HairstylePreset[] = [
     tag: 'Tied',
     description: 'High sleek ponytail',
     gender: 'female',
-    image: '/hairstyles/female/high-ponytail.svg',
+    image: '/hairstyles/female/high-ponytail.jpg',
   },
   {
     id: 'natural-curls',
@@ -146,7 +146,7 @@ export const FEMALE_HAIRSTYLES: HairstylePreset[] = [
     tag: 'Curly',
     description: 'Full voluminous natural curls',
     gender: 'female',
-    image: '/hairstyles/female/natural-curls.svg',
+    image: '/hairstyles/female/natural-curls.jpg',
   },
 ]
 
