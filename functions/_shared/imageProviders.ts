@@ -95,11 +95,22 @@ const GEMINI_MODELS = [
 
 const OPENAI_EDIT_MODELS = ['gpt-image-1', 'dall-e-2'] as const
 
-/** Hugging Face image-to-image / edit models via Inference Providers */
-const HF_IMAGE_MODELS = [
-  'black-forest-labs/FLUX.1-Kontext-dev',
-  'Qwen/Qwen-Image-Edit',
-  'black-forest-labs/FLUX.1-Kontext-pro',
+/** Hugging Face image-to-image via router.huggingface.co only.
+ *  Do NOT use api-inference.huggingface.co — hostname is dead (causes CF error 1016).
+ */
+const HF_IMAGE_ATTEMPTS = [
+  {
+    model: 'black-forest-labs/FLUX.1-Kontext-dev',
+    url: 'https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-Kontext-dev',
+  },
+  {
+    model: 'Qwen/Qwen-Image-Edit',
+    url: 'https://router.huggingface.co/hf-inference/models/Qwen/Qwen-Image-Edit',
+  },
+  {
+    model: 'black-forest-labs/FLUX.1-Kontext-pro',
+    url: 'https://router.huggingface.co/hf-inference/models/black-forest-labs/FLUX.1-Kontext-pro',
+  },
 ] as const
 
 function isBillingRequiredError(status: number, message?: string): boolean {
@@ -157,8 +168,35 @@ function mapOpenAIMessage(status: number, message?: string): string {
   return message || 'OpenAI image generation failed.'
 }
 
+function sanitizeProviderError(status: number, message?: string): string {
+  const raw = (message || '').replace(/\s+/g, ' ').trim()
+  const lower = raw.toLowerCase()
+
+  if (
+    lower.includes('error code: 1016') ||
+    lower.includes('origin dns') ||
+    lower.includes('could not be resolved') ||
+    lower.includes('getaddrinfo') ||
+    lower.includes('enotfound')
+  ) {
+    return 'Could not reach the image provider (DNS/network). Try again, or switch provider (Gemini / OpenAI / Hugging Face).'
+  }
+
+  if (lower.includes('<!doctype html') || lower.includes('<html')) {
+    return `Provider returned an HTTP ${status} error page. Check your key permissions and try again.`
+  }
+
+  // Keep messages short for toasts
+  if (raw.length > 280) {
+    return `${raw.slice(0, 277)}...`
+  }
+
+  return raw
+}
+
 function mapHuggingFaceMessage(status: number, message?: string): string {
-  const lower = (message || '').toLowerCase()
+  const cleaned = sanitizeProviderError(status, message)
+  const lower = cleaned.toLowerCase()
   if (
     status === 401 ||
     status === 403 ||
@@ -181,7 +219,8 @@ function mapHuggingFaceMessage(status: number, message?: string): string {
   if (status === 503 || lower.includes('loading') || lower.includes('currently loading')) {
     return 'Hugging Face model is loading. Wait ~20s and try again.'
   }
-  return message || 'Hugging Face image generation failed.'
+  if (cleaned) return cleaned
+  return 'Hugging Face image generation failed.'
 }
 
 interface GeminiPart {
@@ -430,14 +469,11 @@ export async function generateWithHuggingFace(
   let lastStatus = 502
 
   const dataUrl = `data:${args.mimeType};base64,${args.imageBase64}`
-  const endpointsFor = (model: string) => [
-    `https://router.huggingface.co/hf-inference/models/${model}`,
-    `https://api-inference.huggingface.co/models/${model}`,
-  ]
 
-  for (const model of HF_IMAGE_MODELS) {
-    for (const url of endpointsFor(model)) {
-      const res = await fetch(url, {
+  for (const attempt of HF_IMAGE_ATTEMPTS) {
+    let res: Response
+    try {
+      res = await fetch(attempt.url, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${args.apiKey}`,
@@ -453,60 +489,61 @@ export async function generateWithHuggingFace(
           },
         }),
       })
+    } catch (err) {
+      lastStatus = 502
+      lastError = sanitizeProviderError(
+        502,
+        err instanceof Error ? err.message : 'Network error contacting Hugging Face',
+      )
+      continue
+    }
 
-      if (res.ok) {
-        const image = await parseHfImageResponse(res)
-        if (image) {
-          return {
-            success: true,
-            image: image.data,
-            mimeType: image.mimeType,
-            provider: 'huggingface',
-            model,
-          }
-        }
-        lastStatus = 502
-        lastError = 'Hugging Face returned an empty image response.'
-        continue
-      }
-
-      const errJson = (await res
-        .clone()
-        .json()
-        .catch(() => ({}))) as {
-        error?: string | { message?: string }
-        estimated_time?: number
-      }
-      const rawMessage =
-        typeof errJson.error === 'string'
-          ? errJson.error
-          : errJson.error?.message || (await res.text().catch(() => ''))
-
-      lastStatus = res.status
-      lastError = mapHuggingFaceMessage(res.status, rawMessage)
-
-      // Model loading — tell user to retry
-      if (res.status === 503) {
+    if (res.ok) {
+      const image = await parseHfImageResponse(res)
+      if (image) {
         return {
-          success: false,
-          status: 503,
-          error: lastError,
+          success: true,
+          image: image.data,
+          mimeType: image.mimeType,
           provider: 'huggingface',
+          model: attempt.model,
         }
       }
+      lastStatus = 502
+      lastError = 'Hugging Face returned an empty image response.'
+      continue
+    }
 
-      if (res.status === 401 || res.status === 403) {
-        return {
-          success: false,
-          status: res.status,
-          error: lastError,
-          provider: 'huggingface',
-        }
+    const errJson = (await res
+      .clone()
+      .json()
+      .catch(() => ({}))) as {
+      error?: string | { message?: string }
+      estimated_time?: number
+    }
+    const rawMessage =
+      typeof errJson.error === 'string'
+        ? errJson.error
+        : errJson.error?.message || (await res.text().catch(() => ''))
+
+    lastStatus = res.status
+    lastError = mapHuggingFaceMessage(res.status, rawMessage)
+
+    if (res.status === 503) {
+      return {
+        success: false,
+        status: 503,
+        error: lastError,
+        provider: 'huggingface',
       }
+    }
 
-      // Try next endpoint/model on 404/not supported
-      if (res.status === 404 || res.status === 400) {
-        continue
+    if (res.status === 401 || res.status === 403) {
+      return {
+        success: false,
+        status: res.status,
+        error: lastError,
+        provider: 'huggingface',
       }
     }
   }
