@@ -9,8 +9,9 @@ import { NotificationToast } from './components/NotificationToast'
 import { generateHairstyle } from './lib/api'
 import {
   HAIR_COLOR_PRESETS,
-  HAIRSTYLE_PRESETS,
   LOADING_MESSAGES,
+  MALE_HAIRSTYLES,
+  getHairstylesForGender,
 } from './lib/constants'
 import {
   clearApiKey,
@@ -18,7 +19,7 @@ import {
   isRememberKeyEnabled,
   saveApiKey,
 } from './lib/storage'
-import type { ToastMessage, ToastType } from './types'
+import type { Gender, ToastMessage, ToastType } from './types'
 
 function App() {
   const [apiKey, setApiKey] = useState(() => getStoredApiKey() || '')
@@ -29,7 +30,8 @@ function App() {
   const [imageMime, setImageMime] = useState('image/jpeg')
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
 
-  const [styleId, setStyleId] = useState(HAIRSTYLE_PRESETS[0].id)
+  const [gender, setGender] = useState<Gender>('male')
+  const [styleId, setStyleId] = useState(MALE_HAIRSTYLES[0].id)
   const [colorId, setColorId] = useState(HAIR_COLOR_PRESETS[0].id)
   const [customPrompt, setCustomPrompt] = useState('')
   const [customOpen, setCustomOpen] = useState(false)
@@ -89,8 +91,8 @@ function App() {
       return
     }
 
-    const style =
-      HAIRSTYLE_PRESETS.find((s) => s.id === styleId)?.name || styleId
+    const styles = getHairstylesForGender(gender)
+    const style = styles.find((s) => s.id === styleId)?.name || styleId
     const color =
       HAIR_COLOR_PRESETS.find((c) => c.id === colorId)?.name || colorId
 
@@ -104,6 +106,7 @@ function App() {
           mimeType: imageMime,
           style,
           color,
+          gender,
           customPrompt: customPrompt.trim() || undefined,
         },
         apiKey.trim(),
@@ -168,10 +171,17 @@ function App() {
             />
 
             <StyleSelector
+              gender={gender}
               selectedStyleId={styleId}
               selectedColorId={colorId}
               customPrompt={customPrompt}
               customOpen={customOpen}
+              onGenderChange={(next) => {
+                setGender(next)
+                const nextStyles = getHairstylesForGender(next)
+                setStyleId(nextStyles[0].id)
+                setResultUrl(null)
+              }}
               onStyleChange={setStyleId}
               onColorChange={setColorId}
               onCustomPromptChange={setCustomPrompt}

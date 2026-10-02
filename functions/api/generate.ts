@@ -3,6 +3,7 @@ interface GenerateBody {
   mimeType?: string
   style?: string
   color?: string
+  gender?: 'male' | 'female'
   customPrompt?: string
 }
 
@@ -47,16 +48,28 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
-function buildPrompt(style: string, color: string, customPrompt?: string): string {
+function buildPrompt(
+  style: string,
+  color: string,
+  gender?: 'male' | 'female',
+  customPrompt?: string,
+): string {
   const extra = customPrompt?.trim()
     ? ` Additional specifications: ${customPrompt.trim()}.`
     : ''
+  const genderHint =
+    gender === 'female'
+      ? 'Style the hair as a feminine hairstyle cut and silhouette'
+      : gender === 'male'
+        ? 'Style the hair as a masculine hairstyle cut and silhouette'
+        : 'Style the hair naturally for the subject'
 
   return (
     `Maintain absolute photographic consistency with the reference subject's face: ` +
     `preserve the exact facial geometry, eyes, nose, lips, jawline, skin tone, texture, ` +
     `lighting, and expression without any alteration. Only replace the hair with a ` +
-    `photorealistic ${style} in ${color}.${extra} ` +
+    `photorealistic ${style} in ${color}. ${genderHint}.` +
+    `${extra} ` +
     `Ensure natural scalp blending and seamless hairline edges.`
   )
 }
@@ -123,7 +136,7 @@ export const onRequestPost: PagesFunction = async (context) => {
     return jsonResponse({ success: false, error: 'Invalid JSON body.' }, 400)
   }
 
-  const { style, color, customPrompt } = body
+  const { style, color, gender, customPrompt } = body
   let { imageBase64, mimeType } = body
 
   if (!imageBase64 || !style || !color) {
@@ -145,7 +158,7 @@ export const onRequestPost: PagesFunction = async (context) => {
   }
 
   mimeType = mimeType || 'image/jpeg'
-  const prompt = buildPrompt(style, color, customPrompt)
+  const prompt = buildPrompt(style, color, gender, customPrompt)
 
   const geminiUrl =
     'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent'

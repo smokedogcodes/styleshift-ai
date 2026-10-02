@@ -1,8 +1,12 @@
+export type Gender = 'male' | 'female'
+
 export interface HairstylePreset {
   id: string
   name: string
   tag: string
   description: string
+  gender: Gender
+  image: string
 }
 
 export interface HairColorPreset {
@@ -16,6 +20,7 @@ export interface GeneratePayload {
   mimeType: string
   style: string
   color: string
+  gender: Gender
   customPrompt?: string
 }
 
