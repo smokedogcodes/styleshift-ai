@@ -109,6 +109,11 @@ export function ApiKeyModal({
                 or stored in any database. Photos are processed in memory and
                 discarded after generation.
               </p>
+              <p className="mt-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-2.5 py-2 text-xs leading-relaxed text-amber-200/90">
+                Hairstyle generation needs a <strong className="font-semibold">paid Gemini project</strong>.
+                Free-tier keys fail on image models (Google returns quota limit 0).
+                Enable billing in AI Studio, then create a new key from that project.
+              </p>
             </div>
           </div>
           <button
@@ -157,15 +162,26 @@ export function ApiKeyModal({
           Remember key on this device
         </label>
 
-        <a
-          href="https://aistudio.google.com/api-keys"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mb-4 inline-flex items-center gap-1.5 text-sm text-accent hover:underline"
-        >
-          Get a free Gemini API key at Google AI Studio
-          <ExternalLink className="h-3.5 w-3.5" />
-        </a>
+        <div className="mb-4 flex flex-col gap-2 text-sm">
+          <a
+            href="https://aistudio.google.com/api-keys"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-accent hover:underline"
+          >
+            Get a Gemini API key at Google AI Studio
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+          <a
+            href="https://aistudio.google.com/plan_info"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 text-zinc-400 hover:text-accent hover:underline"
+          >
+            Enable billing / Paid Tier for image models
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+        </div>
 
         {testResult && (
           <div

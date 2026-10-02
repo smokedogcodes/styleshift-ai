@@ -24,6 +24,7 @@ interface GeminiResponse {
     content?: {
       parts?: GeminiPart[]
     }
+    finishReason?: string
   }>
   error?: {
     code?: number
@@ -37,6 +38,16 @@ const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, x-gemini-key',
 }
+
+/**
+ * Image models are paid-only on the Gemini API (free tier quota is 0).
+ * Prefer the cheapest current Nano Banana Lite model, then fall back.
+ */
+const IMAGE_MODELS = [
+  'gemini-3.1-flash-lite-image',
+  'gemini-3.1-flash-image',
+  'gemini-2.5-flash-image',
+] as const
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -74,26 +85,67 @@ function buildPrompt(
   )
 }
 
-function mapGeminiError(status: number, message?: string): { status: number; error: string } {
+function isBillingRequiredError(status: number, message?: string): boolean {
   const lower = (message || '').toLowerCase()
+  return (
+    lower.includes('free_tier') ||
+    lower.includes('free tier') ||
+    (lower.includes('limit: 0') && status === 429) ||
+    (lower.includes('quota') && lower.includes('0') && status === 429) ||
+    lower.includes('billing') ||
+    lower.includes('not available') ||
+    lower.includes('not supported on the free')
+  )
+}
+
+function mapGeminiError(
+  status: number,
+  message?: string,
+): { status: number; error: string } {
+  const lower = (message || '').toLowerCase()
+
+  if (isBillingRequiredError(status, message)) {
+    return {
+      status: 402,
+      error:
+        'Gemini image models require a billed Google AI project (not free-tier). In AI Studio open your project → enable Billing / upgrade to Paid Tier 1, then create a new API key from that project. Free keys return “rate limit” because image quota is 0.',
+    }
+  }
+
   if (
     status === 401 ||
     status === 403 ||
     lower.includes('api key') ||
     lower.includes('permission') ||
-    lower.includes('unauthenticated')
+    lower.includes('unauthenticated') ||
+    lower.includes('api_key_invalid')
   ) {
     return { status: 401, error: 'Invalid API key. Please check your Gemini API key.' }
   }
-  if (status === 429 || lower.includes('quota') || lower.includes('rate')) {
-    return { status: 429, error: 'Rate limit exceeded. Please wait and try again.' }
+
+  if (status === 429 || lower.includes('resource_exhausted')) {
+    return {
+      status: 429,
+      error:
+        'Rate limit or quota exceeded for this project. Wait a minute, or check Rate Limits in Google AI Studio.',
+    }
   }
+
+  if (status === 404 || lower.includes('not found') || lower.includes('is not found')) {
+    return {
+      status: 404,
+      error:
+        'This image model is not available for your key/region. Enable billing and use a current Nano Banana model in AI Studio.',
+    }
+  }
+
   if (status === 400) {
     return {
       status: 400,
       error: message || 'Invalid request. Check your image and try again.',
     }
   }
+
   return {
     status: status >= 400 ? status : 502,
     error: message || 'Generation failed. Please try again.',
@@ -115,6 +167,52 @@ function extractImage(parts: GeminiPart[] | undefined): { data: string; mimeType
     }
   }
   return null
+}
+
+async function callGeminiModel(
+  model: string,
+  apiKey: string,
+  prompt: string,
+  mimeType: string,
+  imageBase64: string,
+): Promise<{ ok: boolean; status: number; data: GeminiResponse }> {
+  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`
+
+  const res = await fetch(geminiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': apiKey,
+    },
+    body: JSON.stringify({
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: prompt },
+            {
+              inline_data: {
+                mime_type: mimeType,
+                data: imageBase64,
+              },
+            },
+          ],
+        },
+      ],
+      generationConfig: {
+        responseModalities: ['TEXT', 'IMAGE'],
+      },
+    }),
+  })
+
+  let data: GeminiResponse
+  try {
+    data = (await res.json()) as GeminiResponse
+  } catch {
+    data = { error: { message: 'Unexpected response from Gemini API.' } }
+  }
+
+  return { ok: res.ok && !data.error, status: res.status, data }
 }
 
 export const onRequestOptions: PagesFunction = async () =>
@@ -160,37 +258,53 @@ export const onRequestPost: PagesFunction = async (context) => {
   mimeType = mimeType || 'image/jpeg'
   const prompt = buildPrompt(style, color, gender, customPrompt)
 
-  const geminiUrl =
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent'
+  let lastFailure: { status: number; message?: string } | null = null
 
-  let geminiRes: Response
   try {
-    geminiRes = await fetch(geminiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey,
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              { text: prompt },
-              {
-                inline_data: {
-                  mime_type: mimeType,
-                  data: imageBase64,
-                },
-              },
-            ],
-          },
-        ],
-        generationConfig: {
-          responseModalities: ['TEXT', 'IMAGE'],
-        },
-      }),
-    })
+    for (const model of IMAGE_MODELS) {
+      const result = await callGeminiModel(
+        model,
+        apiKey,
+        prompt,
+        mimeType,
+        imageBase64,
+      )
+
+      if (result.ok) {
+        const parts = result.data.candidates?.[0]?.content?.parts
+        const image = extractImage(parts)
+        if (image) {
+          return jsonResponse({
+            success: true,
+            image: image.data,
+            mimeType: image.mimeType,
+            model,
+          })
+        }
+
+        lastFailure = {
+          status: 502,
+          message:
+            result.data.candidates?.[0]?.finishReason
+              ? `Model blocked the image (${result.data.candidates[0].finishReason}). Try another photo.`
+              : 'No image was returned. Try another photo or style.',
+        }
+        continue
+      }
+
+      const message = result.data.error?.message
+      lastFailure = { status: result.status, message }
+
+      // Don't keep retrying other models if billing/free-tier is the issue
+      if (isBillingRequiredError(result.status, message)) {
+        break
+      }
+
+      // Invalid key — stop immediately
+      if (result.status === 401 || result.status === 403) {
+        break
+      }
+    }
   } catch {
     return jsonResponse(
       { success: false, error: 'Could not reach Google AI Studio.' },
@@ -198,41 +312,9 @@ export const onRequestPost: PagesFunction = async (context) => {
     )
   }
 
-  let geminiData: GeminiResponse
-  try {
-    geminiData = (await geminiRes.json()) as GeminiResponse
-  } catch {
-    return jsonResponse(
-      { success: false, error: 'Unexpected response from Gemini API.' },
-      502,
-    )
-  }
-
-  if (!geminiRes.ok || geminiData.error) {
-    const mapped = mapGeminiError(
-      geminiRes.status,
-      geminiData.error?.message,
-    )
-    return jsonResponse({ success: false, error: mapped.error }, mapped.status)
-  }
-
-  const parts = geminiData.candidates?.[0]?.content?.parts
-  const image = extractImage(parts)
-
-  if (!image) {
-    return jsonResponse(
-      {
-        success: false,
-        error:
-          'No image was returned. The model may have blocked the request — try another photo or style.',
-      },
-      502,
-    )
-  }
-
-  return jsonResponse({
-    success: true,
-    image: image.data,
-    mimeType: image.mimeType,
-  })
+  const mapped = mapGeminiError(
+    lastFailure?.status || 502,
+    lastFailure?.message,
+  )
+  return jsonResponse({ success: false, error: mapped.error }, mapped.status)
 }

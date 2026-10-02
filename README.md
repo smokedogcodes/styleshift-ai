@@ -97,7 +97,21 @@ No Cloudflare secrets are required — users supply their own Gemini keys via th
 
 ## Model note
 
-Generation uses Google’s **`gemini-2.5-flash-image`** multimodal image model (Imagen text-only models cannot edit a reference selfie). Face identity is reinforced via a strict system-style prompt in `functions/api/generate.ts`.
+Hairstyle editing uses Google’s Nano Banana image models via the Gemini API:
+
+1. `gemini-3.1-flash-lite-image` (preferred)
+2. `gemini-3.1-flash-image`
+3. `gemini-2.5-flash-image`
+
+**Important:** these image models are **not available on the free tier**. A free AI Studio key will often return HTTP 429 with `free_tier … limit: 0`, which looks like a rate limit but really means “quota is zero / billing required.”
+
+To generate styles:
+
+1. Open [Google AI Studio plan / billing](https://aistudio.google.com/plan_info) and enable billing (Paid Tier 1).
+2. Create a new API key from that billed project: [API keys](https://aistudio.google.com/api-keys).
+3. Paste the key into StyleShift AI.
+
+Face identity is reinforced via a strict system-style prompt in `functions/api/generate.ts`.
 
 ## License
 
