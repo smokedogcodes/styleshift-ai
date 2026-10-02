@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #09090b;
+  --bg-raised: #18181b;
+  --bg-overlay: #27272a;
+  --border: rgba(255, 255, 255, 0.08);
+  --text: #fafafa;
+  --text-muted: #a1a1aa;
+  --accent: #2dd4bf;
+  --accent-soft: #14b8a6;
+  --glow: rgba(45, 212, 191, 0.2);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: 'Outfit', system-ui, sans-serif;
+  color: var(--text);
+  background-color: var(--bg);
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(20, 184, 166, 0.18), transparent),
+    radial-gradient(ellipse 60% 40% at 100% 0%, rgba(45, 212, 191, 0.08), transparent),
+    radial-gradient(ellipse 50% 30% at 0% 100%, rgba(15, 118, 110, 0.12), transparent);
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+::selection {
+  background: rgba(45, 212, 191, 0.35);
+  color: #fff;
+}
+
+@layer components {
+  .panel {
+    @apply rounded-2xl border border-white/10 bg-zinc-900/60 backdrop-blur-md;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-accent px-5 py-3 text-sm font-semibold text-zinc-950 transition;
+    @apply hover:bg-teal-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-950;
+    @apply disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-accent;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-medium text-zinc-100 transition;
+    @apply hover:border-accent/40 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50;
+  }
+
+  .step-label {
+    @apply mb-1 text-xs font-semibold uppercase tracking-[0.18em] text-accent;
+  }
+}
