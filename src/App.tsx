@@ -16,13 +16,18 @@ import {
 import {
   clearApiKey,
   getStoredApiKey,
+  getStoredProvider,
   isRememberKeyEnabled,
   saveApiKey,
 } from './lib/storage'
+import type { ApiProvider } from './lib/providers'
 import type { Gender, ToastMessage, ToastType } from './types'
 
 function App() {
   const [apiKey, setApiKey] = useState(() => getStoredApiKey() || '')
+  const [apiProvider, setApiProvider] = useState<ApiProvider>(() =>
+    getStoredProvider(),
+  )
   const [rememberKey, setRememberKey] = useState(() => isRememberKeyEnabled())
   const [apiKeyModalOpen, setApiKeyModalOpen] = useState(false)
 
@@ -86,7 +91,7 @@ function App() {
     if (!imageBase64 || !apiKey.trim()) {
       if (!apiKey.trim()) {
         setApiKeyModalOpen(true)
-        pushToast('info', 'Add your Gemini API key to generate.')
+        pushToast('info', 'Add an image-capable API key to generate.')
       }
       return
     }
@@ -110,6 +115,7 @@ function App() {
           customPrompt: customPrompt.trim() || undefined,
         },
         apiKey.trim(),
+        apiProvider,
       )
 
       if (!response.success) {
@@ -227,7 +233,7 @@ function App() {
                     className="underline hover:text-amber-200"
                     onClick={() => setApiKeyModalOpen(true)}
                   >
-                    Add your Gemini key
+                    Add your API key
                   </button>
                 </p>
               )}
@@ -272,17 +278,20 @@ function App() {
       <ApiKeyModal
         open={apiKeyModalOpen}
         initialKey={apiKey}
+        initialProvider={apiProvider}
         rememberInitially={rememberKey}
         onClose={() => setApiKeyModalOpen(false)}
-        onSave={(key, remember) => {
-          saveApiKey(key, remember)
+        onSave={(key, remember, provider) => {
+          saveApiKey(key, remember, provider)
           setApiKey(key)
+          setApiProvider(provider)
           setRememberKey(remember)
           pushToast('success', 'API key saved in this browser.')
         }}
         onClear={() => {
           clearApiKey()
           setApiKey('')
+          setApiProvider('auto')
           setRememberKey(false)
           pushToast('info', 'API key cleared.')
         }}

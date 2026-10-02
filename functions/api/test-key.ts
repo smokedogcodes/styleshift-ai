@@ -1,7 +1,16 @@
+import {
+  detectProviderFromKey,
+  resolveProvider,
+  testGeminiKey,
+  testOpenAIKey,
+  type ApiProvider,
+} from '../_shared/imageProviders'
+
 const corsHeaders: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, x-gemini-key',
+  'Access-Control-Allow-Headers':
+    'Content-Type, x-api-key, x-gemini-key, x-api-provider',
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -14,59 +23,116 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
+function readApiKey(request: Request): string | null {
+  return (
+    request.headers.get('x-api-key')?.trim() ||
+    request.headers.get('x-gemini-key')?.trim() ||
+    null
+  )
+}
+
 export const onRequestOptions: PagesFunction = async () =>
   new Response(null, { status: 204, headers: corsHeaders })
 
 export const onRequestPost: PagesFunction = async (context) => {
-  const apiKey = context.request.headers.get('x-gemini-key')?.trim()
+  const apiKey = readApiKey(context.request)
   if (!apiKey) {
     return jsonResponse({ valid: false, error: 'Missing API key.' }, 401)
   }
 
-  try {
-    const res = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models?pageSize=1',
-      {
-        method: 'GET',
-        headers: {
-          'x-goog-api-key': apiKey,
-        },
-      },
-    )
-
-    if (res.ok) {
-      return jsonResponse({ valid: true })
+  let preferred: ApiProvider = 'auto'
+  const header = context.request.headers.get('x-api-provider')?.trim().toLowerCase()
+  if (header === 'gemini' || header === 'openai' || header === 'auto') {
+    preferred = header
+  } else {
+    try {
+      const body = (await context.request.json()) as { provider?: ApiProvider }
+      if (
+        body.provider === 'gemini' ||
+        body.provider === 'openai' ||
+        body.provider === 'auto'
+      ) {
+        preferred = body.provider
+      }
+    } catch {
+      // no body is fine
     }
+  }
 
-    if (res.status === 401 || res.status === 403) {
+  const provider = resolveProvider(apiKey, preferred)
+
+  try {
+    if (!provider) {
+      // Ambiguous key — probe both
+      const [gemini, openai] = await Promise.all([
+        testGeminiKey(apiKey),
+        testOpenAIKey(apiKey),
+      ])
+      if (gemini.valid) {
+        return jsonResponse({
+          valid: true,
+          provider: 'gemini',
+          message:
+            'Key works with Google Gemini. Image generation still needs a billed Gemini project.',
+        })
+      }
+      if (openai.valid) {
+        return jsonResponse({
+          valid: true,
+          provider: 'openai',
+          imageCapable: openai.imageCapable,
+          message: openai.imageCapable
+            ? 'Key works with OpenAI and image models are available.'
+            : openai.error || 'Key works with OpenAI.',
+        })
+      }
       return jsonResponse(
-        { valid: false, error: 'Invalid API key.' },
+        {
+          valid: false,
+          error:
+            'Could not validate this key with Gemini or OpenAI. Choose a provider manually, or use an AIza… / sk-… key.',
+        },
         401,
       )
     }
 
-    if (res.status === 429) {
+    if (provider === 'openai') {
+      const result = await testOpenAIKey(apiKey)
       return jsonResponse(
         {
-          valid: false,
-          error: 'Rate limit exceeded while testing the key. Try again shortly.',
+          valid: result.valid,
+          provider: 'openai',
+          imageCapable: result.imageCapable,
+          error: result.valid ? undefined : result.error,
+          message: result.valid
+            ? result.imageCapable
+              ? 'OpenAI key is valid and lists image models.'
+              : result.error || 'OpenAI key is valid.'
+            : undefined,
         },
-        429,
+        result.valid ? 200 : 401,
       )
     }
 
-    let message = 'Could not validate API key.'
-    try {
-      const data = (await res.json()) as { error?: { message?: string } }
-      if (data.error?.message) message = data.error.message
-    } catch {
-      // ignore
-    }
-
-    return jsonResponse({ valid: false, error: message }, res.status)
+    const result = await testGeminiKey(apiKey)
+    return jsonResponse(
+      {
+        valid: result.valid,
+        provider: 'gemini',
+        error: result.valid ? undefined : result.error,
+        message: result.valid
+          ? 'Gemini key is valid. Image models require a billed Google AI project.'
+          : undefined,
+      },
+      result.valid ? 200 : 401,
+    )
   } catch {
     return jsonResponse(
-      { valid: false, error: 'Could not reach Google AI Studio.' },
+      {
+        valid: false,
+        error: 'Could not reach the provider to validate this key.',
+        detected: detectProviderFromKey(apiKey),
+      },
       502,
     )
   }

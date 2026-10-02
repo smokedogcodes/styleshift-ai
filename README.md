@@ -10,12 +10,12 @@ Built with **Vite + React + TypeScript + Tailwind CSS + Lucide**, deployed on **
 - Hairstyle & hair color presets + optional custom prompt
 - Zero Facial Drift prompting — only hair/hairline change
 - Before/after comparison slider + HD download
-- API key in `sessionStorage` (optional `localStorage` remember)
+- BYOK image API keys: **Auto-detect Google Gemini or OpenAI** (keys stored in `sessionStorage` / optional `localStorage`)
 
 ## Prerequisites
 
 - Node.js 18+
-- A free [Gemini API key](https://aistudio.google.com/api-keys) from Google AI Studio
+- A BYOK image API key ([Google AI Studio](https://aistudio.google.com/api-keys) and/or [OpenAI](https://platform.openai.com/api-keys))
 - (Deploy) GitHub account + Cloudflare account
 
 ## Local development
@@ -97,21 +97,18 @@ No Cloudflare secrets are required — users supply their own Gemini keys via th
 
 ## Model note
 
-Hairstyle editing uses Google’s Nano Banana image models via the Gemini API:
+StyleShift routes your BYOK key to a provider that can return images:
 
-1. `gemini-3.1-flash-lite-image` (preferred)
-2. `gemini-3.1-flash-image`
-3. `gemini-2.5-flash-image`
+| Provider | Key shape | Models tried |
+|----------|-----------|--------------|
+| Google Gemini | `AIza…` | `gemini-3.1-flash-lite-image`, `gemini-3.1-flash-image`, `gemini-2.5-flash-image` |
+| OpenAI | `sk-…` | `gpt-image-1` image edits, then `dall-e-2` edits |
 
-**Important:** these image models are **not available on the free tier**. A free AI Studio key will often return HTTP 429 with `free_tier … limit: 0`, which looks like a rate limit but really means “quota is zero / billing required.”
+Choose **Auto**, **Gemini**, or **OpenAI** in the key modal. Generation only proceeds through a provider that supports image output.
 
-To generate styles:
+**Gemini note:** image models are paid-only on the API (free-tier quota is 0). Enable billing in AI Studio or use an OpenAI key with image access instead.
 
-1. Open [Google AI Studio plan / billing](https://aistudio.google.com/plan_info) and enable billing (Paid Tier 1).
-2. Create a new API key from that billed project: [API keys](https://aistudio.google.com/api-keys).
-3. Paste the key into StyleShift AI.
-
-Face identity is reinforced via a strict system-style prompt in `functions/api/generate.ts`.
+Face identity is reinforced via a strict system-style prompt in `functions/_shared/imageProviders.ts`.
 
 ## License
 

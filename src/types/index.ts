@@ -40,6 +40,9 @@ export type GenerateResponse = GenerateSuccessResponse | GenerateErrorResponse
 export interface TestKeyResponse {
   valid: boolean
   error?: string
+  message?: string
+  provider?: string
+  imageCapable?: boolean
 }
 
 export type ToastType = 'success' | 'error' | 'info'

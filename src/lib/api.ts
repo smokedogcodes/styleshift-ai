@@ -3,18 +3,21 @@ import type {
   GenerateResponse,
   TestKeyResponse,
 } from '../types'
+import type { ApiProvider } from './providers'
 
 export async function generateHairstyle(
   payload: GeneratePayload,
   apiKey: string,
+  provider: ApiProvider = 'auto',
 ): Promise<GenerateResponse> {
   const response = await fetch('/api/generate', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-gemini-key': apiKey,
+      'x-api-key': apiKey,
+      'x-api-provider': provider,
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, provider }),
   })
 
   let data: GenerateResponse
@@ -37,13 +40,18 @@ export async function generateHairstyle(
   return data
 }
 
-export async function testApiKey(apiKey: string): Promise<TestKeyResponse> {
+export async function testApiKey(
+  apiKey: string,
+  provider: ApiProvider = 'auto',
+): Promise<TestKeyResponse> {
   const response = await fetch('/api/test-key', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'x-gemini-key': apiKey,
+      'x-api-key': apiKey,
+      'x-api-provider': provider,
     },
+    body: JSON.stringify({ provider }),
   })
 
   try {

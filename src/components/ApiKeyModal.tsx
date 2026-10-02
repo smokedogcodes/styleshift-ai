@@ -11,25 +11,32 @@ import {
 } from 'lucide-react'
 import { testApiKey } from '../lib/api'
 import { cn } from '../lib/cn'
+import {
+  detectProviderFromKey,
+  type ApiProvider,
+} from '../lib/providers'
 
 interface ApiKeyModalProps {
   open: boolean
   initialKey: string
+  initialProvider: ApiProvider
   rememberInitially: boolean
   onClose: () => void
-  onSave: (key: string, remember: boolean) => void
+  onSave: (key: string, remember: boolean, provider: ApiProvider) => void
   onClear: () => void
 }
 
 export function ApiKeyModal({
   open,
   initialKey,
+  initialProvider,
   rememberInitially,
   onClose,
   onSave,
   onClear,
 }: ApiKeyModalProps) {
   const [key, setKey] = useState(initialKey)
+  const [provider, setProvider] = useState<ApiProvider>(initialProvider)
   const [remember, setRemember] = useState(rememberInitially)
   const [showKey, setShowKey] = useState(false)
   const [testing, setTesting] = useState(false)
@@ -41,11 +48,12 @@ export function ApiKeyModal({
   useEffect(() => {
     if (open) {
       setKey(initialKey)
+      setProvider(initialProvider)
       setRemember(rememberInitially)
       setShowKey(false)
       setTestResult(null)
     }
-  }, [open, initialKey, rememberInitially])
+  }, [open, initialKey, initialProvider, rememberInitially])
 
   useEffect(() => {
     if (!open) return
@@ -58,6 +66,9 @@ export function ApiKeyModal({
 
   if (!open) return null
 
+  const detected = detectProviderFromKey(key)
+  const effectiveProvider = provider === 'auto' ? detected : provider
+
   const handleTest = async () => {
     const trimmed = key.trim()
     if (!trimmed) {
@@ -67,11 +78,12 @@ export function ApiKeyModal({
     setTesting(true)
     setTestResult(null)
     try {
-      const result = await testApiKey(trimmed)
+      const result = await testApiKey(trimmed, provider)
       setTestResult({
         ok: result.valid,
         message: result.valid
-          ? 'API key is valid and ready to use.'
+          ? result.message ||
+            `Key is valid${result.provider ? ` (${result.provider})` : ''}.`
           : result.error || 'Invalid API key.',
       })
     } catch {
@@ -102,17 +114,13 @@ export function ApiKeyModal({
             </div>
             <div>
               <h2 id="api-key-title" className="text-lg font-semibold text-white">
-                Gemini API Key
+                Image API Key
               </h2>
               <p className="mt-1 text-sm text-zinc-400">
-                Your key stays in this browser only — never sent to our servers
-                or stored in any database. Photos are processed in memory and
-                discarded after generation.
-              </p>
-              <p className="mt-2 rounded-lg border border-amber-500/25 bg-amber-500/10 px-2.5 py-2 text-xs leading-relaxed text-amber-200/90">
-                Hairstyle generation needs a <strong className="font-semibold">paid Gemini project</strong>.
-                Free-tier keys fail on image models (Google returns quota limit 0).
-                Enable billing in AI Studio, then create a new key from that project.
+                Bring any key that can edit/generate images. We auto-detect
+                Google Gemini or OpenAI from the key format, then generate only
+                if that provider supports image output. Keys stay in this
+                browser only.
               </p>
             </div>
           </div>
@@ -127,6 +135,44 @@ export function ApiKeyModal({
         </div>
 
         <label className="mb-1.5 block text-sm font-medium text-zinc-300">
+          Provider
+        </label>
+        <div className="mb-4 grid grid-cols-3 gap-1 rounded-xl border border-white/10 bg-zinc-950/60 p-1">
+          {(
+            [
+              { id: 'auto' as const, label: 'Auto' },
+              { id: 'gemini' as const, label: 'Gemini' },
+              { id: 'openai' as const, label: 'OpenAI' },
+            ] as const
+          ).map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => {
+                setProvider(option.id)
+                setTestResult(null)
+              }}
+              className={cn(
+                'rounded-lg px-2 py-2 text-xs font-semibold transition sm:text-sm',
+                provider === option.id
+                  ? 'bg-accent text-zinc-950'
+                  : 'text-zinc-400 hover:bg-white/5 hover:text-white',
+              )}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
+        {provider === 'auto' && (
+          <p className="mb-3 text-xs text-zinc-500">
+            {detected
+              ? `Detected: ${detected === 'gemini' ? 'Google Gemini' : 'OpenAI'}`
+              : 'Paste a key starting with AIza… (Gemini) or sk-… (OpenAI).'}
+          </p>
+        )}
+
+        <label className="mb-1.5 block text-sm font-medium text-zinc-300">
           API Key
         </label>
         <div className="relative mb-3">
@@ -137,7 +183,9 @@ export function ApiKeyModal({
               setKey(e.target.value)
               setTestResult(null)
             }}
-            placeholder="AIza..."
+            placeholder={
+              effectiveProvider === 'openai' ? 'sk-...' : 'AIza... or sk-...'
+            }
             className="w-full rounded-xl border border-white/10 bg-zinc-900 px-4 py-3 pr-12 text-sm text-white placeholder:text-zinc-600 focus:border-accent/50 focus:outline-none focus:ring-1 focus:ring-accent/40"
             autoComplete="off"
             spellCheck={false}
@@ -169,18 +217,22 @@ export function ApiKeyModal({
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 text-accent hover:underline"
           >
-            Get a Gemini API key at Google AI Studio
+            Get a Google Gemini API key
             <ExternalLink className="h-3.5 w-3.5" />
           </a>
           <a
-            href="https://aistudio.google.com/plan_info"
+            href="https://platform.openai.com/api-keys"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-zinc-400 hover:text-accent hover:underline"
+            className="inline-flex items-center gap-1.5 text-accent hover:underline"
           >
-            Enable billing / Paid Tier for image models
+            Get an OpenAI API key
             <ExternalLink className="h-3.5 w-3.5" />
           </a>
+          <p className="text-xs leading-relaxed text-zinc-500">
+            Gemini image models need a billed Google project. OpenAI needs a
+            plan that includes image edits (`gpt-image-1` / DALL·E).
+          </p>
         </div>
 
         {testResult && (
@@ -207,6 +259,7 @@ export function ApiKeyModal({
             onClick={() => {
               onClear()
               setKey('')
+              setProvider('auto')
               setTestResult(null)
             }}
             className="btn-secondary text-zinc-400"
@@ -233,7 +286,7 @@ export function ApiKeyModal({
               type="button"
               onClick={() => {
                 if (!key.trim()) return
-                onSave(key.trim(), remember)
+                onSave(key.trim(), remember, provider)
                 onClose()
               }}
               disabled={!key.trim()}
